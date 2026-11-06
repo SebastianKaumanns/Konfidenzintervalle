@@ -1,0 +1,109 @@
+<!DOCTYPE html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Verteilungen, Mittelwert und Konfidenzintervall</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);--bg:#fff;--fg:#1d1d1f;--mu:#6b6b72;--card:#f4f4f7;--a:#2a6fdb;--b:#e07b00;--r:#d33;--g:#8886}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;--bg:#17181b;--fg:#ececf0;--mu:#9a9aa5;--card:#222428;--a:#6aa3ff;--b:#ffa94d;--r:#ff6b6b}}
+:root[data-theme="dark"]{color-scheme:dark;--bg:#17181b;--fg:#ececf0;--mu:#9a9aa5;--card:#222428;--a:#6aa3ff;--b:#ffa94d;--r:#ff6b6b}
+body{margin:0;padding:16px;background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}
+h1{font-size:20px;margin:0 0 10px}
+.bar{display:flex;gap:16px;align-items:center;flex-wrap:wrap;background:var(--card);padding:10px 14px;border-radius:10px;margin-bottom:12px}
+.row,#s3{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+@media(max-width:800px){.row,#s3{grid-template-columns:1fr}}
+.card{background:var(--card);border-radius:10px;padding:12px;min-width:0}
+svg{width:100%;height:auto;display:block;overflow:hidden}
+.mu{color:var(--mu);font-size:13px}
+button,select{font:inherit;padding:4px 8px}
+input[type=range]{width:100%}
+.chip{display:inline-block;background:var(--bg);border-radius:6px;padding:1px 6px;margin:2px;font-variant-numeric:tabular-nums}
+.f{font-family:ui-serif,Georgia,serif;font-size:18px;margin:6px 0}
+td{padding:2px 12px 2px 0}
+</style></head><body>
+<h1>Verteilungen, Mittelwert und Konfidenzintervall</h1>
+<div class="bar"><label>Stichprobengröße n = <b id="nv">10</b> <input id="n" type="range" min="2" max="200" value="10" style="width:220px"></label><button id="add">+ weitere Verteilung</button></div>
+<div id="rows"></div>
+<div class="card"><b>Schritt 3: Stichprobe ziehen und Konfidenzintervall bilden</b>
+<p>Variable <select id="sv"></select> · α <select id="al"><option value="0.1">0,10</option><option value="0.05" selected>0,05</option><option value="0.01">0,01</option></select> · n wie oben
+<button id="d1">Stichprobe ziehen</button> <button id="d100">100 Stichproben ziehen</button></p>
+<div id="s3"><div id="out"></div><div id="cov"></div></div></div>
+<script>
+const $=id=>document.getElementById(id),SV='XYZ',fmt=(v,d)=>v.toLocaleString('de-DE',{minimumFractionDigits:d,maximumFractionDigits:d});
+const npdf=(x,m,s)=>Math.exp(-.5*((x-m)/s)**2)/(s*2.50663),LN=Math.exp(.125);
+const D={
+pack:{n:'Paketgewicht (Normal)',lo:2,hi:3,f:x=>npdf(x,2.5,.1),mu:2.5,sd:.1,v:[2.2,2.8],u:'kg',dg:3,td:2},
+height:{n:'Körpergröße (Mischverteilung)',lo:140,hi:205,f:x=>npdf(x,166,7)+npdf(x,179,7),mu:172.5,sd:Math.sqrt(91.25),v:[145,200],u:'cm',dg:2,td:0},
+exp:{n:'Zeit zwischen Toren (Exponential)',lo:0,hi:300,f:x=>Math.exp(-x/30),mu:30,sd:30,v:[0,150],u:'min',dg:1,td:0},
+pois:{n:'Tore pro Spiel (Poisson)',mu:3,sd:Math.sqrt(3),v:[-.5,9.5],tk:[0,2,4,6,8],u:'Tore',dg:2,td:0},
+logn:{n:'Einkommen (Lognormal)',lo:0,hi:20000,f:x=>x>0?Math.exp(-2*Math.log(x/4000)**2)/x:0,mu:4000*LN,sd:4000*LN*Math.sqrt(Math.exp(.25)-1),v:[0,12000],u:'€',dg:0,td:0}};
+for(const k in D){const d=D[k];d.disc=k=='pois';
+ if(d.disc){d.lo=-.5;d.h=1;d.N=21;let q=Math.exp(-3);d.p=[];for(let i=0;i<21;i++){d.p.push(q);q*=3/(i+1)}}
+ else{d.N=300;d.h=(d.hi-d.lo)/300;d.p=Array.from({length:300},(_,j)=>d.f(d.lo+(j+.5)*d.h))}
+ const s=d.p.reduce((a,b)=>a+b);d.p=d.p.map(v=>v/s);d.cum=[];let c=0;for(const v of d.p)d.cum.push(c+=v)}
+function cdf(d,x){if(d.disc){x=Math.floor(x);return x<0?0:d.cum[Math.min(x,d.N-1)]}
+ const s=(x-d.lo)/d.h,j=Math.floor(s);if(j<0)return 0;if(j>=d.N)return 1;return(j?d.cum[j-1]:0)+d.p[j]*(s-j)}
+function samp(d){const u=Math.random();let a=0,b=d.N-1;while(a<b){const m=a+b>>1;d.cum[m]<u?a=m+1:b=m}return d.disc?a:d.lo+(a+Math.random())*d.h}
+function fft(re,im,inv){const n=re.length;
+ for(let i=1,j=0;i<n;i++){let b=n>>1;for(;j&b;b>>=1)j^=b;j^=b;if(i<j){[re[i],re[j]]=[re[j],re[i]];[im[i],im[j]]=[im[j],im[i]]}}
+ for(let l=2;l<=n;l<<=1){const a=(inv?-2:2)*Math.PI/l,wr=Math.cos(a),wi=Math.sin(a);
+  for(let i=0;i<n;i+=l){let cr=1,ci=0;for(let k=0;k<l/2;k++){const x=i+k,y=x+l/2,tr=re[y]*cr-im[y]*ci,ti=re[y]*ci+im[y]*cr;re[y]=re[x]-tr;im[y]=im[x]-ti;re[x]+=tr;im[x]+=ti;[cr,ci]=[cr*wr-ci*wi,cr*wi+ci*wr]}}}}
+const MC={};
+function md(k,n){const key=k+n;if(MC[key])return MC[key];if(Object.keys(MC).length>30)for(const z in MC)delete MC[z];
+ const d=D[k],L=n*(d.N-1)+1;let M=1;while(M<L)M<<=1;const re=new Float64Array(M),im=new Float64Array(M);d.p.forEach((v,i)=>re[i]=v);fft(re,im);
+ for(let i=0;i<M;i++){const r=Math.hypot(re[i],im[i])**n,t=Math.atan2(im[i],re[i])*n;re[i]=r*Math.cos(t);im[i]=r*Math.sin(t)}
+ fft(re,im,1);const m=[];let s=0;for(let i=0;i<L;i++){const v=Math.max(0,re[i]);m.push(v);s+=v}
+ return MC[key]={x0:d.lo+.5*d.h,dx:d.h/n,m:m.map(v=>v/s)}}
+const W=460,H=210,ML=14,MR=10,MT=12,MB=26;
+function frame(d,ym){const[a,b]=d.v,tk=d.tk||[0,1,2,3,4,5].map(i=>a+(b-a)*i/5),X=v=>ML+(v-a)/(b-a)*(W-ML-MR),Y=v=>H-MB-Math.min(v,ym*1.02)/ym*(H-MT-MB);
+ return{X,Y,s:`<svg viewBox="0 0 ${W} ${H}"><g font-size="10" fill="var(--mu)">${tk.map(v=>`<text x="${X(v)}" y="${H-MB+14}" text-anchor="middle">${fmt(v,d.td)}</text>`).join('')}</g><line x1="${ML}" x2="${W-MR}" y1="${H-MB}" y2="${H-MB}" stroke="var(--mu)"/>`}}
+const ov=(f,mu,sd,c)=>`<rect x="${f.X(mu-sd)}" y="${MT}" width="${f.X(mu+sd)-f.X(mu-sd)}" height="${H-MB-MT}" fill="${c}" opacity=".13"/><line x1="${f.X(mu)}" x2="${f.X(mu)}" y1="${MT}" y2="${H-MB}" stroke="${c}" stroke-dasharray="4 3"/>`;
+const line=(f,c)=>c.map(([u,y],i)=>(i?'L':'M')+f.X(u).toFixed(1)+' '+f.Y(y).toFixed(1)).join('');
+const area=(f,c)=>line(f,c)+`L${f.X(c[c.length-1][0])} ${H-MB}L${f.X(c[0][0])} ${H-MB}Z`;
+const curve=d=>d.p.map((p,j)=>[d.lo+(j+.5)*d.h,p/d.h]).filter(q=>q[0]>=d.v[0]&&q[0]<=d.v[1]);
+function chX(k,x){const d=D[k],c=curve(d),f=frame(d,Math.max(...c.map(q=>q[1]))*1.15);let s=f.s+ov(f,d.mu,d.sd,'var(--mu)');
+ if(d.disc)c.forEach(([u,y])=>s+=`<rect x="${f.X(u-.4)}" y="${f.Y(y)}" width="${f.X(u+.4)-f.X(u-.4)}" height="${H-MB-f.Y(y)}" fill="${x!=null&&u<=x?'var(--b)':'var(--a)'}"/>`);
+ else{s+=`<path d="${area(f,c)}" fill="var(--a)" opacity=".3"/><path d="${line(f,c)}" fill="none" stroke="var(--a)" stroke-width="2"/>`;
+  const e=x!=null?c.filter(q=>q[0]<=x):[];if(e.length)s+=`<path d="${area(f,e)}" fill="var(--b)" opacity=".7"/>`}
+ if(x!=null)s+=`<line x1="${f.X(x)}" x2="${f.X(x)}" y1="${MT}" y2="${H-MB}" stroke="var(--b)" stroke-width="2"/>`;
+ return s+'</svg>'}
+function chM(k,n,ci){const d=D[k],[a,b]=d.v,m=md(k,n),sm=d.sd/Math.sqrt(n),i0=Math.max(0,Math.ceil((a-m.x0)/m.dx)),i1=Math.min(m.m.length-1,Math.floor((b-m.x0)/m.dx)),st=Math.max(1,Math.ceil((i1-i0+1)/300)),c=[];
+ for(let i=i0;i<=i1;i+=st){const j1=Math.min(i+st,i1+1);let s=0;for(let j=i;j<j1;j++)s+=m.m[j];const w=(j1-i)*m.dx;c.push([m.x0+(i+j1-1)/2*m.dx,s/w,w])}
+ const f=frame(d,Math.max(npdf(0,0,sm),...c.map(q=>q[1]))*1.1);let s=f.s+ov(f,d.mu,sm,'var(--mu)')+`<path d="${line(f,curve(d))}" fill="none" stroke="var(--g)" stroke-width="1.5"/>`;
+ if(d.disc)c.forEach(([u,y,w])=>s+=`<rect x="${f.X(u-w/2)}" y="${f.Y(y)}" width="${Math.max(1,f.X(u+w/2)-f.X(u-w/2)-.5)}" height="${H-MB-f.Y(y)}" fill="var(--a)" opacity=".7"/>`);
+ else s+=`<path d="${area(f,c)}" fill="var(--a)" opacity=".4"/><path d="${line(f,c)}" fill="none" stroke="var(--a)" stroke-width="2"/>`;
+ s+=`<path d="${line(f,Array.from({length:101},(_,i)=>{const u=a+(b-a)*i/100;return[u,npdf(u,d.mu,sm)]}))}" fill="none" stroke="var(--b)" stroke-width="2" stroke-dasharray="5 3"/>`;
+ if(ci){const y=H-MB-12,X=f.X;s+=`<g stroke="var(--r)" stroke-width="3"><line x1="${X(ci.lo)}" x2="${X(ci.hi)}" y1="${y}" y2="${y}"/><line x1="${X(ci.lo)}" x2="${X(ci.lo)}" y1="${y-6}" y2="${y+6}"/><line x1="${X(ci.hi)}" x2="${X(ci.hi)}" y1="${y-6}" y2="${y+6}"/></g><circle cx="${X(ci.m)}" cy="${y}" r="5" fill="var(--r)"/>`}
+ return s+'</svg>'}
+function chC(d){const f=frame(d,1);let s=f.s+ov(f,d.mu,0,'var(--mu)');
+ cv.L.forEach((o,j)=>{const y=MT+(j+.5)*(H-MB-MT)/30;s+=`<line x1="${f.X(o.lo)}" x2="${f.X(o.hi)}" y1="${y}" y2="${y}" stroke="${o.lo<=d.mu&&d.mu<=o.hi?'var(--a)':'var(--r)'}" stroke-width="2.5"/>`});
+ return s+'</svg>'}
+const stats=a=>{const m=a.reduce((s,v)=>s+v,0)/a.length;return[m,Math.sqrt(a.reduce((s,v)=>s+(v-m)**2,0)/(a.length-1))]};
+function zq(p){const t=Math.sqrt(-2*Math.log(1-p));return t-(2.515517+.802853*t+.010328*t*t)/(1+1.432788*t+.189269*t*t+.001308*t**3)}
+function qt(n,al){const p=1-al/2,z=zq(p),df=n-1;if(n>=100)return[z,'z'];if(df==1)return[Math.tan(Math.PI*(p-.5)),'t'];if(df==2)return[(2*p-1)/Math.sqrt(2*p*(1-p)),'t'];
+ return[z+(z**3+z)/4/df+(5*z**5+16*z**3+3*z)/96/df**2+(3*z**7+19*z**5+17*z**3-15*z)/384/df**3+(79*z**9+776*z**7+1482*z**5-1920*z**3-945*z)/92160/df**4,'t']}
+let P=[{k:'pack',on:0,x:2.5}],ci=null,cv;
+function setX(i){const d=D[P[i].k],s=$('xs'+i);s.min=d.disc?0:d.v[0];s.max=d.disc?9:d.v[1];s.step=d.disc?1:(d.v[1]-d.v[0])/300;s.value=P[i].x}
+function build(){$('rows').innerHTML=P.map((p,i)=>`<div class="row"><div class="card"><b>${SV[i]}</b> <select class="sel" data-i="${i}">${Object.keys(D).map(k=>`<option value="${k}"${k==p.k?' selected':''}>${D[k].n}</option>`).join('')}</select>${i?` <button data-r="${i}">✕</button>`:''}<div id="cx${i}"></div><div class="mu" id="tx${i}"></div><label><input type="checkbox" class="chk" data-i="${i}"${p.on?' checked':''}> P(${SV[i]} ≤ x) anzeigen</label><input type="range" class="xs" data-i="${i}" id="xs${i}"><div id="px${i}"></div></div><div class="card"><b>Verteilung von ${SV[i]}&#772; (Mittelwert aus n Werten)</b><div id="cm${i}"></div><div class="mu" id="tm${i}"></div></div></div>`).join('');
+ P.forEach((p,i)=>setX(i));$('sv').innerHTML=P.map((p,i)=>`<option value="${i}">${SV[i]}</option>`).join('');$('add').style.display=P.length<3?'':'none'}
+function draw(){const n=+$('n').value;$('nv').textContent=n;
+ P.forEach((p,i)=>{const d=D[p.k],x=p.on?p.x:null,u=' '+d.u;
+  $('cx'+i).innerHTML=chX(p.k,x);$('tx'+i).textContent=`μ = ${fmt(d.mu,d.dg)}${u}, σ = ${fmt(d.sd,d.dg)}${u}`;
+  $('xs'+i).disabled=!p.on;$('px'+i).innerHTML=p.on?`<b>P(${SV[i]} ≤ ${fmt(p.x,d.disc?0:d.dg)}${u}) = ${fmt(cdf(d,p.x)*100,2)} %</b>`:'';
+  $('cm'+i).innerHTML=chM(p.k,n,ci&&ci.i==i?ci:null);
+  $('tm'+i).innerHTML=`μ(${SV[i]}&#772;) = ${fmt(d.mu,d.dg)}${u}, σ(${SV[i]}&#772;) = σ/√n = ${fmt(d.sd/Math.sqrt(n),d.dg+1)}${u}<br><span style="color:var(--a)">■</span> exakt · <span style="color:var(--b)">╌</span> Normalapproximation · <span style="color:var(--mu)">grau: Verteilung von ${SV[i]}</span>`})}
+function show(){const o=cv.last;if(!o){$('out').innerHTML='';$('cov').innerHTML='';return}
+ const n=+$('n').value,i=+$('sv').value,d=D[P[i].k],al=+$('al').value,F=v=>fmt(v,d.dg+1),hp=fmt(1-al/2,3),
+ nm=o.nm=='t'?`t<sub>${n-1}; ${hp}</sub>`:`z<sub>${hp}</sub>`;
+ $('out').innerHTML=`<div>Stichprobe (${SV[i]}): ${o.a.slice(0,8).map(v=>`<span class="chip">${fmt(v,d.disc?0:d.dg)}</span>`).join('')}${n>8?` … <span class="mu">(+${n-8} weitere)</span>`:''}</div>
+ <table><tr><td>x̄ = ${F(o.m)}</td><td>s = ${F(o.s)}</td><td>n = ${n}</td><td>${nm} = ${fmt(o.qq,3)}</td></tr></table>
+ <div class="f">x̄ ± ${nm} · s/√n</div><div>= ${F(o.m)} ± ${fmt(o.qq,3)} · ${F(o.s)}/√${n} = <b>[${F(o.lo)}; ${F(o.hi)}]</b> ${o.lo<=d.mu&&d.mu<=o.hi?'✓ enthält μ':'✗ enthält μ nicht'}</div><div class="mu">(z statt t ab n ≥ 100)</div>`;
+ $('cov').innerHTML=chC(d)+`<div class="mu">Letzte ${cv.L.length} Intervalle (rot = ohne μ). Überdeckung: ${cv.c} von ${cv.t} (${fmt(cv.c/cv.t*100,1)} %), Soll: ${fmt((1-al)*100,0)} %</div>`}
+function rst(){ci=null;cv={c:0,t:0,L:[],last:null};show()}
+function take(many){const n=+$('n').value,i=+$('sv').value,d=D[P[i].k],al=+$('al').value;
+ for(let r=0;r<(many?100:1);r++){const a=Array.from({length:n},()=>samp(d)),[m,s]=stats(a),[qq,nm]=qt(n,al),e=qq*s/Math.sqrt(n),o={a,m,s,qq,nm,lo:m-e,hi:m+e};cv.t++;if(o.lo<=d.mu&&d.mu<=o.hi)cv.c++;cv.L.push(o);cv.last=o}
+ cv.L=cv.L.slice(-30);const o=cv.last;ci={i,lo:o.lo,hi:o.hi,m:o.m};show();draw()}
+$('rows').addEventListener('input',e=>{const t=e.target,i=+t.dataset.i;if(t.classList.contains('xs'))P[i].x=+t.value;if(t.classList.contains('chk'))P[i].on=t.checked;draw()});
+$('rows').addEventListener('change',e=>{const t=e.target;if(t.classList.contains('sel')){const i=+t.dataset.i;P[i].k=t.value;P[i].x=D[t.value].mu;setX(i);rst();draw()}});
+$('rows').addEventListener('click',e=>{const r=e.target.dataset.r;if(r){P.splice(+r,1);build();rst();draw()}});
+$('add').onclick=()=>{const k=P.length==1?'exp':'pois';P.push({k,on:0,x:D[k].mu});build();rst();draw()};
+$('n').oninput=()=>{rst();draw()};$('al').onchange=$('sv').onchange=rst;$('d1').onclick=()=>take(0);$('d100').onclick=()=>take(1);
+build();rst();draw();
+</script></body></html>
