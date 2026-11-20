@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stichprobenziehung</title>
+<style>
+  body { font-family: Arial, sans-serif; max-width: 680px; margin: 0 auto; padding: 1.5rem; background: #fff; color: #1a1a1a; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; gap: 12px; }
+  h2 { font-size: 18px; font-weight: 500; margin: 0; }
+  .lang { display: inline-flex; border: 1px solid #bbb; border-radius: 8px; overflow: hidden; flex-shrink: 0; }
+  .lang button { border: none; background: #fff; padding: 6px 12px; font-size: 13px; cursor: pointer; color: #555; }
+  .lang button.active { background: #1a56c4; color: #fff; }
+  .card { background: #fff; border: 1px solid #e0e0e0; border-radius: 10px; padding: 1.25rem; margin-bottom: 1rem; }
+  .label { font-size: 13px; color: #666; margin: 0 0 6px; }
+  .badge { display: inline-block; font-size: 12px; padding: 3px 10px; border-radius: 6px; background: #e8f0fb; color: #1a56c4; margin-left: 8px; }
+  .controls { display: flex; align-items: center; gap: 12px; margin-bottom: 1rem; }
+  input[type=range] { flex: 1; }
+  .n-label { font-size: 15px; font-weight: 500; min-width: 16px; }
+  button.main { width: 100%; padding: 11px; font-size: 15px; font-weight: 500; border-radius: 8px; border: 1px solid #bbb; background: #fff; cursor: pointer; }
+  button.main:hover { background: #f5f5f5; }
+  .result-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 8px; margin-top: 1rem; }
+  .pill { background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px 6px; text-align: center; font-size: 19px; font-weight: 500; }
+  .pill-idx { font-size: 11px; color: #999; margin-top: 2px; font-weight: 400; }
+  .stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 1rem; }
+  .stat { background: #f5f5f5; border-radius: 8px; padding: 10px 12px; text-align: center; }
+  .stat-label { font-size: 12px; color: #666; }
+  .stat-val { font-size: 20px; font-weight: 500; }
+  .empty { color: #aaa; font-size: 14px; text-align: center; padding: 2rem 0; }
+  h3 { font-size: 15px; font-weight: 500; margin: 0 0 10px; }
+  .calc { font-family: "Courier New", monospace; font-size: 14px; line-height: 1.7; overflow-x: auto; }
+  .calc table { border-collapse: collapse; }
+  .calc td { padding: 1px 6px; white-space: nowrap; }
+  .calc td.num { text-align: right; }
+  .calc tr.sum td { border-top: 1.5px solid #1a1a1a; font-weight: bold; padding-top: 4px; }
+  .step { margin: 4px 0; white-space: nowrap; }
+  .result { font-weight: bold; color: #1a56c4; }
+  .hint { font-size: 12px; color: #777; margin-top: 10px; font-family: Arial, sans-serif; }
+  .warn { font-size: 13px; color: #a33; background: #fbeaea; border-radius: 6px; padding: 8px 10px; margin-top: 8px; font-family: Arial, sans-serif; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h2 id="t-title"></h2>
+  <div class="lang">
+    <button id="btn-de" onclick="setLang('de')">Deutsch</button>
+    <button id="btn-en" onclick="setLang('en')">English</button>
+  </div>
+</div>
+
+<div class="card">
+  <p class="label"><span id="t-pool"></span> <span id="pool-count" class="badge"></span></p>
+  <p style="font-size:13px;color:#666;margin:0;" id="t-pool-desc"></p>
+</div>
+
+<div class="card">
+  <p class="label" id="t-size"></p>
+  <div class="controls">
+    <input type="range" min="1" max="9" step="1" value="5" id="n-slider"
+           oninput="document.getElementById('n-out').textContent=this.value">
+    <span class="n-label" id="n-out">5</span>
+    <span style="font-size:13px;color:#666;" id="t-with-repl"></span>
+  </div>
+  <button class="main" onclick="draw()" id="t-draw"></button>
+</div>
+
+<div class="card">
+  <p class="label" id="t-sample"></p>
+  <div id="result-area"></div>
+  <div id="stats-area"></div>
+</div>
+
+<div class="card" id="mean-card" style="display:none;">
+  <h3 id="t-mean-head"></h3>
+  <div class="calc" id="mean-calc"></div>
+</div>
+
+<div class="card" id="var-card" style="display:none;">
+  <h3 id="t-var-head"></h3>
+  <div class="calc" id="var-calc"></div>
+</div>
+
+<script>
+// ──────────────────────────────────────────────
+// HIER die echten Kursdaten eintragen (Minuten/Tag):
+// Einfach die Zahlen zwischen den eckigen Klammern ersetzen.
+// ──────────────────────────────────────────────
+var rawPool = [
+151,9,250,280,380,270,300,424,432,95,381,416,223,624,380,154,164,343,508,338,220,148,375,480,220,394,446,252,300,199,210,842,168,482,600,365,309,270,288,214,337,306,264,600,168,184,625,235,270,180,56,186,371,349,240,264,304,678,218,532,226,146,388,195,207,210,359,318,274,363,240,220,238,103,300,180,600,480,394,240,720,570,500,275,435,270,300,228,120,443,413,600,240,240,226,459];
+
+// Nur echte Zahlen behalten: leere Einträge (z. B. durch ",," oder ein
+// Komma am Ende) würden sonst als "undefined" gezogen.
+var pool = rawPool.filter(function (v) { return typeof v === 'number' && isFinite(v); });
+
+var TEXT = {
+  de: {
+    title: 'Stichprobenziehung – Handynutzung',
+    pool: 'Datenpool', values: 'Werte',
+    poolDesc: 'Zufällige Stichprobe aus den Kursdaten (Minuten/Tag).',
+    size: 'Stichprobengröße', withRepl: 'Werte (mit Zurücklegen)',
+    draw: '▶ Stichprobe ziehen', sample: 'Meine Stichprobe',
+    empty: 'Noch keine Ziehung — Button oben drücken.',
+    draw_i: 'Ziehung', mean: 'Mittelwert', variance: 'Varianz', sd: 'Std.-Abw.',
+    meanHead: 'Berechnung des Mittelwerts',
+    varHead: 'Berechnung der Stichprobenvarianz',
+    sqDiffs: 'Quadrierte Abweichungen vom Mittelwert:',
+    sum: 'Summe',
+    sdLine: 'Standardabweichung:',
+    nOne: 'Bei n = 1 ist die Stichprobenvarianz nicht definiert, da durch n − 1 = 0 geteilt würde.',
+    notDef: 'n. def.',
+    rounding: 'Zwischenergebnisse sind auf zwei Nachkommastellen gerundet angezeigt; gerechnet wird mit dem exakten Mittelwert.',
+    locale: 'de-DE'
+  },
+  en: {
+    title: 'Drawing a Sample – Phone Usage',
+    pool: 'Data pool', values: 'values',
+    poolDesc: 'Random sample from the course data (minutes/day).',
+    size: 'Sample size', withRepl: 'values (with replacement)',
+    draw: '▶ Draw sample', sample: 'My sample',
+    empty: 'No sample drawn yet — press the button above.',
+    draw_i: 'Draw', mean: 'Mean', variance: 'Variance', sd: 'Std. dev.',
+    meanHead: 'Calculating the mean',
+    varHead: 'Calculating the sample variance',
+    sqDiffs: 'Squared deviations from the mean:',
+    sum: 'Sum',
+    sdLine: 'Standard deviation:',
+    nOne: 'For n = 1 the sample variance is not defined, because we would divide by n − 1 = 0.',
+    notDef: 'n/a',
+    rounding: 'Intermediate results are shown rounded to two decimal places; calculations use the exact mean.',
+    locale: 'en-US'
+  }
+};
+
+var lang = 'de';
+var sample = null;
+
+function t(key) { return TEXT[lang][key]; }
+
+function fmt(x) {
+  return x.toLocaleString(t('locale'), { maximumFractionDigits: 2, useGrouping: false });
+}
+
+function setText(id, txt) { document.getElementById(id).textContent = txt; }
+
+function setLang(l) {
+  lang = l;
+  document.documentElement.lang = l;
+  document.getElementById('btn-de').className = (l === 'de') ? 'active' : '';
+  document.getElementById('btn-en').className = (l === 'en') ? 'active' : '';
+  setText('t-title', t('title'));
+  setText('t-pool', t('pool'));
+  setText('pool-count', pool.length + ' ' + t('values'));
+  setText('t-pool-desc', t('poolDesc'));
+  setText('t-size', t('size'));
+  setText('t-with-repl', t('withRepl'));
+  setText('t-draw', t('draw'));
+  setText('t-sample', t('sample'));
+  setText('t-mean-head', t('meanHead'));
+  setText('t-var-head', t('varHead'));
+  render();
+}
+
+function draw() {
+  var n = parseInt(document.getElementById('n-slider').value, 10);
+  sample = [];
+  for (var i = 0; i !== n; i++) {
+    sample.push(pool[Math.floor(Math.random() * pool.length)]);
+  }
+  render();
+}
+
+function render() {
+  var resultArea = document.getElementById('result-area');
+  var statsArea = document.getElementById('stats-area');
+  var meanCard = document.getElementById('mean-card');
+  var varCard = document.getElementById('var-card');
+
+  if (!sample) {
+    resultArea.innerHTML = '<div class="empty">' + t('empty') + '</div>';
+    statsArea.innerHTML = '';
+    meanCard.style.display = 'none';
+    varCard.style.display = 'none';
+    return;
+  }
+
+  var n = sample.length;
+
+  // Gezogene Werte
+  var pills = '';
+  for (var i = 0; i !== n; i++) {
+    pills += '<div class="pill">' + fmt(sample[i]) +
+             '<div class="pill-idx">' + t('draw_i') + ' ' + (i + 1) + '</div></div>';
+  }
+  resultArea.innerHTML = '<div class="result-grid">' + pills + '</div>';
+
+  // Kennzahlen (Varianz mit n − 1)
+  var sum = 0;
+  for (i = 0; i !== n; i++) sum += sample[i];
+  var mean = sum / n;
+
+  var sqDiffs = [];
+  var sqSum = 0;
+  for (i = 0; i !== n; i++) {
+    var d = Math.pow(sample[i] - mean, 2);
+    sqDiffs.push(d);
+    sqSum += d;
+  }
+  var variance = (n > 1) ? sqSum / (n - 1) : null;
+  var sd = (variance !== null) ? Math.sqrt(variance) : null;
+
+  statsArea.innerHTML =
+    '<div class="stats">' +
+      stat(t('mean'), fmt(mean)) +
+      stat(t('variance'), variance !== null ? fmt(variance) : t('notDef')) +
+      stat(t('sd'), sd !== null ? fmt(sd) : t('notDef')) +
+    '</div>';
+
+  // Rechenweg Mittelwert
+  var xbar = 'x&#772;';
+  var terms = sample.map(fmt).join(' + ');
+  var meanHtml =
+    '<div class="step">' + xbar + ' = (1/n) &middot; &Sigma; x<sub>i</sub></div>' +
+    '<div class="step">&nbsp;&nbsp;= (' + terms + ') / ' + n + '</div>' +
+    '<div class="step">&nbsp;&nbsp;= ' + fmt(sum) + ' / ' + n + '</div>' +
+    '<div class="step">&nbsp;&nbsp;= <span class="result">' + fmt(mean) + '</span></div>';
+  document.getElementById('mean-calc').innerHTML = meanHtml;
+  meanCard.style.display = 'block';
+
+  // Rechenweg Varianz
+  var varHtml = '<div class="step">s&sup2; = &Sigma; (x<sub>i</sub> &minus; ' + xbar + ')&sup2; / (n &minus; 1)</div>';
+
+  if (n === 1) {
+    varHtml += '<div class="warn">' + t('nOne') + '</div>';
+  } else {
+    varHtml += '<div class="hint" style="margin:8px 0 4px;">' + t('sqDiffs') + '</div><table>';
+    for (i = 0; i !== n; i++) {
+      varHtml += '<tr>' +
+        '<td>(' + fmt(sample[i]) + ' &minus; ' + fmt(mean) + ')&sup2;</td>' +
+        '<td>=</td>' +
+        '<td class="num">' + fmt(sqDiffs[i]) + '</td></tr>';
+    }
+    varHtml += '<tr class="sum"><td>' + t('sum') + '</td><td>=</td>' +
+               '<td class="num">' + fmt(sqSum) + '</td></tr></table>';
+    varHtml +=
+      '<div class="step" style="margin-top:10px;">s&sup2; = ' + fmt(sqSum) + ' / (' + n + ' &minus; 1)</div>' +
+      '<div class="step">&nbsp;&nbsp;&nbsp;= ' + fmt(sqSum) + ' / ' + (n - 1) + '</div>' +
+      '<div class="step">&nbsp;&nbsp;&nbsp;= <span class="result">' + fmt(variance) + '</span></div>' +
+      '<div class="step" style="margin-top:10px;">' + t('sdLine') + ' s = &radic;' + fmt(variance) +
+        ' = <span class="result">' + fmt(sd) + '</span></div>' +
+      '<div class="hint">' + t('rounding') + '</div>';
+  }
+  document.getElementById('var-calc').innerHTML = varHtml;
+  varCard.style.display = 'block';
+}
+
+function stat(label, val) {
+  return '<div class="stat"><div class="stat-label">' + label + '</div><div class="stat-val">' + val + '</div></div>';
+}
+
+setLang('de');
+</script>
+
+</body>
+</html>
